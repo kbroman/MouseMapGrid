@@ -214,22 +214,75 @@ And are all longer than Liu map? `r all(mm10_L > tapply(liu_map$bp_build38, liu_
 `r ifelse(all(mm10_L > tapply(liu_map$bp_build38, liu_map$chr, max)), "Yay!", "")`
 
 
-
-```{r map_lengths_mm9, results="markup"}
-maxes <- rbind(build38=(mm9_L) , Liu=tapply(liu_map$bp, liu_map$chr, max))
-rbind(maxes, diff=maxes[1,] - maxes[2,])
-```
-
-Are all longer than Liu map? `r all(mm9_L > tapply(liu_map$bp, liu_map$chr, max))`.
-`r ifelse(all(mm9_L > tapply(liu_map$bp, liu_map$chr, max)), "Yay!", "")`
-
-
 ### Shift the maps
 
-Shift the maps so 0 cM == 0 Mbp; also put cap at the telomere.
+Okay, so now we've got the Liu et al. maps into build 38 and with the
+sex-averaged, female, and male maps aligned. Next we want to add the 0
+position plus the telomere and then determine the correponding cM
+positions.
+
+I'm going to do the split, interpolate, recombine, again.
+
+First split:
+
+```{r split_liu_map}
+pmap <- map_df_to_list(liu_map, pos_column="bp_build38")
+gmap_ave <- map_df_to_list(liu_map, pos_column="cM")
+gmap_fem <- map_df_to_list(liu_map, pos_column="cM_female")
+gmap_mal <- map_df_to_list(liu_map, pos_column="cM_male")
+```
+
+Now anchor the chromosomes at 0 and the telomere:
+
+```{r anchor_liu_map}
+pmap_anchored <- pmap
+for(chr in seq_along(pmap)) {
+    pmap_anchored[[chr]] <- c(0, pmap[[chr]], mm10_L[chr])
+    names(pmap_anchored[[chr]])[c(1, length(pmap_anchored[[chr]]))] <-
+        paste0(c("zero", "telo"), names(pmap[chr]))
+}
+```
+
+Now I do the interpolation to get the cM positions for the zero and
+telomere points.
+
+```{r interpolate_liu_map}
+gmap_ave <- interp_map(pmap_anchored, pmap, gmap_ave)
+gmap_fem <- interp_map(pmap_anchored, pmap, gmap_fem)
+gmap_mal <- interp_map(pmap_anchored, pmap, gmap_mal)
+```
+
+Now we shift the genetic maps so they start at 0.
+
+```{r shift_liu_gmaps}
+gmap_ave <- lapply(gmap_ave, function(a) a-min(a))
+gmap_fem <- lapply(gmap_fem, function(a) a-min(a))
+gmap_mal <- lapply(gmap_mal, function(a) a-min(a))
+```
+
+Finally, we bring them back together into a data frame.
+
+```{r shifted_maps_to_df}
+liu_map <- cbind(map_list_to_df(pmap_anchored, pos_column="bp_build38"),
+                 cM=map_list_to_df(gmap_ave, pos_column="cM")[,"cM"],
+                 cM_female=map_list_to_df(gmap_ave, pos_column="cM_female")[,"cM_female"],
+                 cM_male=map_list_to_df(gmap_ave, pos_column="cM_male")[,"cM_male"])
+```
+
+We also need to change the position names to use the build38
+positions.
+
+```{r shifted_map_fix_markers}
+wh <- grep("_", liu_map$marker)
+rownames(liu_map)[wh] <- liu_map$marker[wh] <- paste(liu_map$chr[wh], liu_map$bp_build38[wh], sep="_")
+```
+
+```{r temporarily_save_file}
+saveRDS(liu_map, file=file.path(out_dir, "liu_map_build38.rds"))
+```
 
 
-### Interpolated positions for the GigaMUGA markers
+### Interpolate GigaMUGA cM
 
 Get interpolated cM positions for the GigaMUGA markers
 
