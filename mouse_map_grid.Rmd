@@ -25,24 +25,26 @@ This analysis serves to do three things:
 
 
 I'll use the [R/qtl2scan](https://github.com/rqtl/qtl2scan) package to
-do interpolations and
+do interpolations,
 [R/qtl2convert](https://github.com/rqtl/qtl2convert) to do some data
-manipulation. I'll also use a few other packages below
+manipulation, and [R/broman](https:github.com/kbroman/broman) for a
+few minor things. I'll also use a few other packages below
 ([rvest](https://github.com/hadley/rvest),
 [AnnotationHub](http://bioconductor.org/packages/release/bioc/html/AnnotationHub.html),
-[devtools](https://github.com/hadley/devtools)).
+and [devtools](https://github.com/hadley/devtools)).
 
 
 ```{r load_libraries}
 library(qtl2scan)
 library(qtl2convert)
+library(broman)
 ```
 
 ### Download and prepare the maps
 
-I first need to download the maps from
-[Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653) and do
-a bit of preparations.
+I first need to download the
+[Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653) maps
+and do a bit of preparations.
 
 I'll first ensure that I've got directories to contain the files I
 download plus those I create.
@@ -55,9 +57,8 @@ for(dir in c(in_dir, out_dir)) {
 }
 ```
 
-Now I'll download
-and unzip the [Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653).
-The file is about 8 Mbp, because it contains the actual data.
+Now I'll download and unzip the
+[Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653) map.
 
 ```{r download_liu_map}
 url <- "http://cgd.jax.org/mousemapconverter/G2F1.anchor.maps.zip"
@@ -68,8 +69,7 @@ if(!file.exists(file)) {
 unzip(file, exdir=in_dir)
 ```
 
-I'll read in the sex-averaged, female, and male genetic maps and get
-them aligned. Strangely, they have different numbers of positions.
+I'll read in the sex-averaged, female, and male genetic maps.
 I'm also going to give each row a name that is like `1_3036178` for
 chromosome 1 at 3,036,178 bp.
 
@@ -77,40 +77,26 @@ chromosome 1 at 3,036,178 bp.
 files <- c("avg.map.csv", "female.map.csv", "male.map.csv")
 liu_map <- lapply(files, function(f) read.csv(file.path(in_dir, f)))
 liu_map <- lapply(liu_map, function(m) { cbind(m, marker=paste(m$Chr, m$Pos, sep="_")) })
+names(liu_map) <- lapply(strsplit(files, "\\."), "[", 1)
+liu_map <- lapply(liu_map, function(m) {
+    colnames(m)[1:2] <- tolower(colnames(m)[1:2])
+    m$chr[m$chr==20] <- "X"
+    m$chr <- factor(m$chr, c(1:19,"X"))
+    m })
 ```
 
-I'm going to split them into lists, interpolate positions in the
-female and male maps so that they are all the same length, and then
-combine them into a single data frame. Note that the male map doesn't
-include the X chromosome
+Strangely, they have different numbers of positions: the sex-averaged,
+female, and male maps have `r add_commas(nrow(liu_map$avg))`
+`r add_commas(nrow(liu_map$female))`, and `r add_commas(nrow(liu_map$male))`
+positions, respectively.
 
-```{r align_maps}
-liu_pmap_list <- lapply(liu_map, map_df_to_list, chr_column="Chr", pos_column="Pos")
-liu_gmap_list <- lapply(liu_map, map_df_to_list, chr_column="Chr", pos_column="cM")
-liu_gmap_list[[2]] <- interp_map(liu_pmap_list[[1]], liu_pmap_list[[2]], liu_gmap_list[[2]])
-liu_gmap_list[[3]] <- interp_map(liu_pmap_list[[1]][1:19], liu_pmap_list[[3]], liu_gmap_list[[3]])
-```
-
-Now I'll combine everything into one data frame and make some slight
-corrections (change column names and change chr 20 to chr X).
-
-```{r combine_maps}
-liu_map <- cbind(liu_map[[1]],
-                 cM_female = map_list_to_df(liu_gmap_list[[2]], pos_column="cM_female")[,"cM_female"],
-                 cM_male = c(map_list_to_df(liu_gmap_list[[3]], pos_column="cM_male")[,"cM_male"],
-                             rep(NA, sum(liu_map[[1]]$Chr==20))))
-colnames(liu_map)[1:2] <- c("chr", "bp")
-liu_map$chr[liu_map$chr==20] <- "X"
-liu_map$chr <- factor(liu_map$chr, c(1:19,"X"))
-liu_map <- liu_map[,c(4,1:3,5,6)]
-```
-
-It turns out these are in build 37 basepairs, so I need to use
-[liftOver](https://genome.ucsc.edu/cgi-bin/hgLiftOver) to convert them
-to build 38 basepairs.
+And it turns out that the basepair positions are from build 37, so we
+first need to convert them to build 38. (I will separately use
+[liftOver](https://genome.ucsc.edu/cgi-bin/hgLiftOver) to convert the
+positions to build 38.)
 
 ```{r save_liu_build37_to_file}
-write.table(cbind(chr=paste0("chr", liu_map$chr), pos=paste(liu_map$bp,liu_map$bp,sep="-")),
+write.table(cbind(chr=paste0("chr", liu_map$avg$chr), pos=paste(liu_map$avg$pos,liu_map$avg$pos,sep="-")),
             file.path(in_dir, "liu_build37_bp.txt"), sep=":",
             row.names=FALSE, col.names=FALSE, quote=FALSE)
 ```
@@ -121,21 +107,70 @@ Now reading the liftOver results back in:
 liu_build38 <- scan(file.path(out_dir, "liu_build38.txt"), what=character())
 liu_build38 <- as.data.frame(matrix(unlist(strsplit(liu_build38, "[:\\-]")), ncol=3, byrow=TRUE),
                              stringsAsFactors=FALSE)[,1:2]
-liu_build38[,1] <- factor(substr(liu_build38[,1], 4, nchar(liu_build38[,1])), levels=c(1:19,"X"))
-liu_build38[,2] <- as.numeric(liu_build38[,2])
-stopifnot(all(liu_build38[,1] == liu_map$chr))
-liu_map$build38 <- liu_build38[,2]
+colnames(liu_build38) <- c("chr", "bp_build38")
+liu_build38$chr <- factor(substr(liu_build38$chr, 4, nchar(liu_build38$chr)), levels=c(1:19,"X"))
+liu_build38$bp_build38 <- as.numeric(liu_build38$bp_build38)
+stopifnot(all(liu_build38$chr == liu_map$avg$chr))
+liu_map$avg$build38 <- liu_build38$bp_build38
 ```
 
+As it turns out, there's one pair of positions that are inverted in
+build 38 vs build 37 (on chr 4), the middle two markers here:
 
+```{r build38_inversion, results="markup"}
+liu_map$avg[liu_map$avg$chr==4,][447:450,]
+```
+
+These markers are present in the male map but not the female map.
+We'll omit the marker at build 37 position
+`r add_commas(liu_map$avg$pos[liu_map$avg$chr==4][449])`.
+
+```{r liu_drop_one_position}
+drop <- 42229812
+for(m in c("avg", "female", "male")) {
+    map <- liu_map[[m]]
+    map <- map[!(map$chr==4 & map$pos==drop),]
+    liu_map[[m]] <- map
+}
+```
+
+I next add the build 38 positions to the female and male maps.
+
+```{r liu_add_build38}
+for(m in c("female", "male")) {
+    liu_map[[m]]$build38 <- liu_map$avg$build38[match(liu_map[[m]]$marker, liu_map$avg$marker)]
+}
+```
+
+Now to align the maps and make a single data frame. I'm going to split
+them into lists and interpolate positions in the female and male maps
+so that they are all the same length. Note that the male map doesn't
+include the X chromosome
+
+```{r align_maps}
+liu_pmap_list <- lapply(liu_map, map_df_to_list, chr_column="chr", pos_column="build38")
+liu_gmap_list <- lapply(liu_map, map_df_to_list, chr_column="chr", pos_column="cM")
+liu_gmap_list$female <- interp_map(liu_pmap_list$avg, liu_pmap_list$female, liu_gmap_list$female)
+liu_gmap_list$male <- interp_map(liu_pmap_list$avg[1:19], liu_pmap_list$male, liu_gmap_list$male)
+```
+
+Now I'll combine everything into one data frame.
+
+```{r combine_maps}
+liu_map <- cbind(liu_map$avg[,c("marker", "chr", "build38", "pos", "cM")],
+                 cM_female = map_list_to_df(liu_gmap_list$female, pos_column="cM_female")[,"cM_female"],
+                 cM_male = c(map_list_to_df(liu_gmap_list$male, pos_column="cM_male")[,"cM_male"],
+                             rep(NA, sum(liu_map$avg$chr=="X"))))
+colnames(liu_map)[3:4] <- c("bp_build38", "bp_build37")
+```
 
 
 ### Get the chromosome lengths
 
 Now we want to anchor the maps at 0 cM. I also want to anchor them at
 the telomeres. So I first need to get the chromosome lengths.
-I couldn't find the build37 lengths, so I'll start with
-the build38 ones, available at <https://www.ncbi.nlm.nih.gov/grc/mouse/data">.
+I'll start by grabbing the build 38 from the web,
+at <https://www.ncbi.nlm.nih.gov/grc/mouse/data">.
 
 I use [rvest](https://github.com/hadley/rvest) to scrape the
 chromosome lengths from the web page.
@@ -152,36 +187,33 @@ mm10_L <- as.numeric(sapply(strsplit(tab[,2], ","), paste, collapse=""))[1:20]
 names(mm10_L) <- c(1:19,"X")
 ```
 
-But even adding the 3 Mbp padding at the start, chromosome 7 is
-shorter than what we have in the Liu et al. maps.
-
-```{r map_lengths, results="markup"}
-maxes <- rbind(build38=(mm10_L+3e6) , Liu=tapply(liu_map$bp, liu_map$chr, max))
-rbind(maxes, diff=maxes[1,] - maxes[2,])
-```
-
-So I'll use
-[AnnotationHub](http://bioconductor.org/packages/release/bioc/html/AnnotationHub.html)
-to get build 37 (mm9). I'm grabbing the cytobands which seem to be the
-smallest thing that will give me full lengths.
+Let's double-check these using
+[AnnotationHub](http://bioconductor.org/packages/release/bioc/html/AnnotationHub.html).
+I'm grabbing the cytobands which seem to be the smallest thing that
+will give me full lengths.
 
 ```{r annotation_hub_lengths}
-file <- file.path(in_dir, "ah51379.rds")
+file <- file.path(in_dir, "ah51380.rds")
 if(file.exists(file)) {
     zz <- readRDS(file)
 } else {
     library(AnnotationHub)
     ah <- AnnotationHub()
-    z <- query(ah, "mm9")
-    zz <- z[["AH53179"]] # cytoband track
-    zz <- as.data.frame(zz)
+    z <- query(ah, "mm10")
+    zz <- as.data.frame(z[["AH53180"]]) # cytoband track
     saveRDS(zz, file)
 }
-mm9_L <- tapply(zz$end, zz$seqnames, max)
-mm9_L <- setNames(mm9_L, substr(names(mm9_L), 4, nchar(mm9_L)))[1:20]
+mm10_Lb <- tapply(zz$end, zz$seqnames, max)
+mm10_Lb <- setNames(mm10_Lb, substr(names(mm10_Lb), 4, nchar(mm10_Lb)))[1:20]
 ```
 
-Here's a comparison of the maximum positions, vs the Liu et al. map:
+These **`r ifelse(all(mm10_L == mm10_Lb), "are", "are not")`**
+the same as those from the web.
+
+And are all longer than Liu map? `r all(mm10_L > tapply(liu_map$bp_build38, liu_map$chr, max))`.
+`r ifelse(all(mm10_L > tapply(liu_map$bp_build38, liu_map$chr, max)), "Yay!", "")`
+
+
 
 ```{r map_lengths_mm9, results="markup"}
 maxes <- rbind(build38=(mm9_L) , Liu=tapply(liu_map$bp, liu_map$chr, max))
