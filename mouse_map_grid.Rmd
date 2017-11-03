@@ -102,6 +102,31 @@ liu_map$chr <- factor(liu_map$chr, c(1:19,"X"))
 liu_map <- liu_map[,c(4,1:3,5,6)]
 ```
 
+It turns out these are in build 37 basepairs, so I need to use
+[liftOver](https://genome.ucsc.edu/cgi-bin/hgLiftOver) to convert them
+to build 38 basepairs.
+
+```{r save_liu_build37_to_file}
+write.table(cbind(chr=paste0("chr", liu_map$chr), pos=paste(liu_map$bp,liu_map$bp,sep="-")),
+            file.path(in_dir, "liu_build37_bp.txt"), sep=":",
+            row.names=FALSE, col.names=FALSE, quote=FALSE)
+```
+
+Now reading the liftOver results back in:
+
+```{r read_liu_build38}
+liu_build38 <- scan(file.path(out_dir, "liu_build38.txt"), what=character())
+liu_build38 <- as.data.frame(matrix(unlist(strsplit(liu_build38, "[:\\-]")), ncol=3, byrow=TRUE),
+                             stringsAsFactors=FALSE)[,1:2]
+liu_build38[,1] <- factor(substr(liu_build38[,1], 4, nchar(liu_build38[,1])), levels=c(1:19,"X"))
+liu_build38[,2] <- as.numeric(liu_build38[,2])
+stopifnot(all(liu_build38[,1] == liu_map$chr))
+liu_map$build38 <- liu_build38[,2]
+```
+
+
+
+
 ### Get the chromosome lengths
 
 Now we want to anchor the maps at 0 cM. I also want to anchor them at
