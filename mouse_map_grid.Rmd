@@ -180,6 +180,9 @@ Calculate a grid along the genetic map, and find the corresponding
 bp positions.
 
 
+### RNAseq gene positions in cM
+
+
 ### Save stuff to files
 
 
