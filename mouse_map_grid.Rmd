@@ -1,0 +1,111 @@
+---
+title: "Mouse map grid"
+author: "Karl Broman"
+date: "3 Nov 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(results="hide", warning=FALSE, message=FALSE)
+```
+
+This analysis serves to do three things:
+
+- Shift the
+  [Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653)
+  mouse genetic map so that 0 cM corresponds to 0 Mbp.
+
+- Calculate a grid of markers across the genome.
+
+- Get interpolated cM positions for the markers on the GigaMUGA array.
+
+
+I'll use the [R/qtl2scan](https://github.com/rqtl/qtl2scan) package to
+do interpolations and
+[R/qtl2convert](https://github.com/rqtl/qtl2convert) to do some data
+manipulation. I'll also use
+[devtools](https://github.com/hadley/devtools) for session information
+at the end.
+
+```{r load_libraries}
+library(qtl2scan)
+library(qtl2convert)
+```
+
+### Download and prepare the maps
+
+I first need to download the maps from
+[Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653) and do
+a bit of preparations.
+
+I'll first ensure that I've got directories to contain the files I
+download plus those I create.
+
+```{r make_directories}
+in_dir <- "files"
+out_dir <- "results"
+for(dir in c(in_dir, out_dir)) {
+    if(!dir.exists(dir)) dir.create(dir)
+}
+```
+
+Now I'll download
+and unzip the [Liu et al (2014)](https://doi.org/10.1534/genetics.114.161653).
+The file is about 8 Mbp, because it contains the actual data.
+
+```{r download_liu_map}
+url <- "http://cgd.jax.org/mousemapconverter/G2F1.anchor.maps.zip"
+file <- file.path(in_dir, basename(url))
+if(!file.exists(file)) {
+    download.file(url, file)
+}
+unzip(file, exdir=in_dir)
+```
+
+I'll read in the sex-averaged, female, and male genetic maps and get
+them aligned. Strangely, they have different numbers of positions.
+I'm also going to give each row a name that is like `1_3036178` for
+chromosome 1 at 3,036,178 bp.
+
+```{r read_maps}
+files <- c("avg.map.csv", "female.map.csv", "male.map.csv")
+liu_map <- lapply(files, function(f) read.csv(file.path(in_dir, f)))
+liu_map <- lapply(liu_map, function(m) { cbind(m, marker=paste(m$Chr, m$Pos, sep="_")) })
+```
+
+I'm going to split them into lists, interpolate positions in the
+female and male maps so that they are all the same length, and then
+combine them into a single data frame. Note that the male map doesn't
+include the X chromosome
+
+```{r align_maps}
+liu_pmap_list <- lapply(liu_map, map_df_to_list, chr_column="Chr", pos_column="Pos")
+liu_gmap_list <- lapply(liu_map, map_df_to_list, chr_column="Chr", pos_column="cM")
+liu_gmap_list[[2]] <- interp_map(liu_pmap_list[[1]], liu_pmap_list[[2]], liu_gmap_list[[2]])
+liu_gmap_list[[3]] <- interp_map(liu_pmap_list[[1]][1:19], liu_pmap_list[[3]], liu_gmap_list[[3]])
+```
+
+Now I'll combine everything into one data frame and make some slight
+corrections (change column names and change chr 20 to chr X).
+
+```{r combine_maps}
+liu_map <- cbind(liu_map[[1]],
+                 cM_female = map_list_to_df(liu_gmap_list[[2]], pos_column="cM_female")[,"cM_female"],
+                 cM_male = c(map_list_to_df(liu_gmap_list[[3]], pos_column="cM_male")[,"cM_male"],
+                             rep(NA, sum(liu_map[[1]]$Chr==20))))
+colnames(liu_map)[1:2] <- c("chr", "bp")
+liu_map$chr[liu_map$chr==20] <- "X"
+liu_map$chr <- factor(liu_map$chr, c(1:19,"X"))
+liu_map <- liu_map[,c(4,1:3,5,6)]
+```
+
+
+
+
+
+
+### Session Info
+
+```{r session_info}
+devtools::session_info()
+```
