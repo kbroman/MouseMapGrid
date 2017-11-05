@@ -435,18 +435,6 @@ The new `grid` object has the same content, but the third column with
 Mbp positions is called `pos` and the final column with basepairs is
 called `bp`.
 
-One **potential issue** to keep in mind: the Liu et al. map has some
-long regions with very low recombination, and so this new 0.02 cM grid
-has some pretty big physical gaps, particularly on chromosome 14.
-Across the whole genome, there are
-`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 1e6)))`
-gaps > 1 Mbp, and
-`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 2e6)))`
-gaps > 2 Mbp, and then chromosome 14 has two gaps > 5 Mbp.
-
-In contrast, KB Choi's original grid had no gaps > 2 Mbp and just 8
-gaps > 1 Mbp.
-
 ### RNAseq gene positions on grid
 
 We won't download the islet RNA-seq data, because it's not yet
@@ -511,6 +499,54 @@ for(i in 1:nrow(annot.mrna)) {
 annot.mrna_newgrid <- annot.mrna
 annot.mrna_newgrid$nearest_snp <- index
 ```
+
+
+### One concern about the new grid
+
+One potential issue to keep in mind: the Liu et al. map has some
+long regions with very low recombination, and so this new 0.02 cM grid
+has some pretty big physical gaps, particularly on chromosome 14.
+Across the whole genome, there are
+`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 1e6)))`
+gaps > 1 Mbp, and
+`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 2e6)))`
+gaps > 2 Mbp, and then chromosome 14 has two gaps > 5 Mbp.
+
+```{r calc_snps_pmap, echo=FALSE}
+snps_pmap <- map_df_to_list(snps, pos_column="pos")
+```
+
+In contrast, KB Choi's original grid had
+`r sum(sapply(snps_pmap, function(a) sum(diff(a) > 2e6)))`
+gaps > 2 Mbp and just
+`r sum(sapply(snps_pmap, function(a) sum(diff(a) > 1e6)))`
+gaps > 1 Mbp.
+
+One result of these physical gaps in the grid is that the many of the
+genes in `annot.mrna` are rather far away from the closest grid position.
+
+```{r calculate_stuff, echo=FALSE}
+new_gridpos <- grid$bp[annot.mrna_newgrid$nearest_snp]
+old_gridpos <- snps$pos[annot.mrna$nearest_snp]
+```
+
+With the original grid, of the `r add_commas(sum(!is.na(annot.mrna$middle_point)))`
+genes on the autosomes or X chromosome,
+`r sum(abs(annot.mrna$middle_point - old_gridpos) > 1e6, na.rm=TRUE)`
+are more than 1 Mbp away from a grid position, and
+just `r sum(abs(annot.mrna$middle_point - old_gridpos) > 0.5e6, na.rm=TRUE)`
+are more than 500 kbp away from a grid position.
+
+With the new grid,
+`r sum(abs(annot.mrna$middle_point - new_gridpos) > 1e6, na.rm=TRUE)`
+are more than 1 Mbp away from a grid position, and
+`r sum(abs(annot.mrna$middle_point - new_gridpos) > 0.5e6, na.rm=TRUE)`
+are more than 500 kbp away from a grid position. There are
+`r sum(abs(annot.mrna$middle_point - new_gridpos) > 2e6, na.rm=TRUE)`
+genes more than 2 Mbp from a grid position, all on chr 14.
+The maximum distance is
+`r round(max(abs(annot.mrna$middle_point - new_gridpos) , na.rm=TRUE)/1e6, 1)`
+Mbp.
 
 ### Save stuff to files
 
