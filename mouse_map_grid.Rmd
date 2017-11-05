@@ -1,7 +1,7 @@
 ---
 title: "Mouse map grid"
 author: "Karl Broman"
-date: "3 Nov 2017"
+date: "`r Sys.Date()`"
 output:
     html_document:
         toc: true
@@ -277,14 +277,94 @@ wh <- grep("_", liu_map$marker)
 rownames(liu_map)[wh] <- liu_map$marker[wh] <- paste(liu_map$chr[wh], liu_map$bp_build38[wh], sep="_")
 ```
 
-```{r temporarily_save_file}
-saveRDS(liu_map, file=file.path(out_dir, "liu_map_build38.rds"))
-```
-
 
 ### Interpolate GigaMUGA cM
 
-Get interpolated cM positions for the GigaMUGA markers
+Let's now get the interpolated cM positions for the GigaMUGA markers.
+We first download the SNP map file and load it into R.
+
+```{r download_gigamuga_map}
+url <- "ftp://ftp.jax.org/MUGA/GM_snps.Rdata"
+file <- file.path(in_dir, basename(url))
+if(!file.exists(file)) {
+    download.file(url, file)
+}
+load(file)
+```
+
+Now we split the physical positions into a list, first subsetting to
+the autosomes and the X chromosome. Also, we convert the Mbp positions
+to basepairs.
+
+```{r subset_GM_snps}
+GM_pmap <- map_df_to_list(GM_snps[GM_snps$chr %in% c(1:19,"X"),], pos_column="pos")
+GM_pmap <- lapply(GM_pmap, function(a) round(a*1e6))
+```
+
+And now let's get interplated cM positions using the Liu et al. map.
+
+```{r interpolate_GM}
+GM_gmap <- interp_map(GM_pmap,
+                      map_df_to_list(liu_map, pos_column="bp_build38"),
+                      map_df_to_list(liu_map, pos_column="cM"))
+```
+
+Finally, we paste the cM positions back into the `GM_snps` object.
+
+```{r paste_in_GM_gmap}
+GM_snps$cM[GM_snps$chr %in% c(1:19,"X")] <- map_list_to_df(GM_gmap, pos_column="cM")[,"cM"]
+```
+
+I'll also make the `chr` column a factor, with levels `1`, `2`, ...,
+`19`, `X`, `Y`, and `M`.
+
+```{r GM_snps_chr_make_factor}
+GM_snps$chr <- factor(GM_snps$chr, levels=c(1:19,"X", "Y", "M"))
+```
+
+### Interpolate MegaMUGA cM
+
+Let's do the same thing with the MegaMUGA markers.
+We first download the SNP map file and load it into R.
+
+```{r download_megamuga_map}
+url <- "ftp://ftp.jax.org/MUGA/MM_snps.Rdata"
+file <- file.path(in_dir, basename(url))
+if(!file.exists(file)) {
+    download.file(url, file)
+}
+load(file)
+```
+
+Note that the `MM_snps` object has markers on chr 1-19, X, Y, P, and
+22. No missing values in the `chr` column, and no notations for the
+mitochondria. But there are missing values in the `pos` column.
+
+We split the physical positions into a list, first subsetting to
+the autosomes and the X chromosome (and omitting snps missing
+physical positions). Also, we convert the Mbp positions
+to basepairs.
+
+```{r subset_MM_snps}
+MM_keep <- !is.na(MM_snps$pos) & MM_snps$chr %in% c(1:19,"X")
+MM_pmap <- map_df_to_list(MM_snps[MM_keep,], pos_column="pos")
+MM_pmap <- lapply(MM_pmap, function(a) round(a*1e6))
+```
+
+And now let's get interplated cM positions using the Liu et al. map.
+
+```{r interpolate_MM}
+MM_gmap <- interp_map(MM_pmap,
+                      map_df_to_list(liu_map, pos_column="bp_build38"),
+                      map_df_to_list(liu_map, pos_column="cM"))
+```
+
+Finally, we paste the cM positions back into the `MM_snps` object.
+
+```{r paste_in_MM_gmap}
+MM_snps$cM_rev[MM_keep] <- map_list_to_df(MM_gmap, pos_column="cM")[,"cM"]
+```
+
 
 
 ### Genome grid in cM
@@ -296,7 +376,17 @@ bp positions.
 ### RNAseq gene positions in cM
 
 
+
 ### Save stuff to files
+
+Now let's save everything to files. I'm going to use `.rds` files rather
+than `.RData` files, as they each will contain one object.
+
+```{r save_maps}
+saveRDS(liu_map, file.path(out_dir, "liu_map.rds"))
+saveRDS(GM_snps, file.path(out_dir, "GM_snps_v2.rds"))
+saveRDS(MM_snps, file.path(out_dir, "MM_snps_v2.rds"))
+```
 
 
 
