@@ -277,6 +277,13 @@ wh <- grep("_", liu_map$marker)
 rownames(liu_map)[wh] <- liu_map$marker[wh] <- paste(liu_map$chr[wh], liu_map$bp_build38[wh], sep="_")
 ```
 
+Let's grab the physical and genetic maps as lists, for later use.
+
+```{r liu_map_to_lists}
+liu_pmap <- map_df_to_list(liu_map, pos_column="bp_build38")
+liu_gmap <- map_df_to_list(liu_map, pos_column="cM")
+```
+
 
 ### Interpolate GigaMUGA cM
 
@@ -304,9 +311,7 @@ GM_pmap <- lapply(GM_pmap, function(a) round(a*1e6))
 And now let's get interplated cM positions using the Liu et al. map.
 
 ```{r interpolate_GM}
-GM_gmap <- interp_map(GM_pmap,
-                      map_df_to_list(liu_map, pos_column="bp_build38"),
-                      map_df_to_list(liu_map, pos_column="cM"))
+GM_gmap <- interp_map(GM_pmap, liu_pmap, liu_gmap)
 ```
 
 Finally, we paste the cM positions back into the `GM_snps` object.
@@ -354,9 +359,7 @@ MM_pmap <- lapply(MM_pmap, function(a) round(a*1e6))
 And now let's get interplated cM positions using the Liu et al. map.
 
 ```{r interpolate_MM}
-MM_gmap <- interp_map(MM_pmap,
-                      map_df_to_list(liu_map, pos_column="bp_build38"),
-                      map_df_to_list(liu_map, pos_column="cM"))
+MM_gmap <- interp_map(MM_pmap, liu_pmap, liu_gmap)
 ```
 
 Finally, we paste the cM positions back into the `MM_snps` object.
@@ -369,13 +372,145 @@ MM_snps$cM_rev[MM_keep] <- map_list_to_df(MM_gmap, pos_column="cM")[,"cM"]
 
 ### Genome grid in cM
 
-Calculate a grid along the genetic map, and find the corresponding
-bp positions.
+Let's now calculate a grid along the genetic map, and find the corresponding
+bp positions. On each chromosome, I'll have the grid start at **3
+Mbp** and go to the telomere. (Traditionally, the mouse chromosomes
+sequence all start at 3 Mbp, leaving space for the centromere.)
+
+So first we need to add a position at 3 Mb for each chromosome and
+interpolate to get the corresponding cM location.
+
+```{r liu_add_3Mb}
+liu_pmap_3Mbp <- lapply(liu_pmap, function(a) sort(c(a, start=3e6)))
+liu_gmap_3Mbp <- interp_map(liu_pmap_3Mbp, liu_pmap, liu_gmap)
+```
+
+Now we want to form a grid starting at the second position on each
+chromosome and ending at the telomere. KB Choi's 64k grid is a nice
+round number, but the inter-marker distances are slightly different
+between chromosomes. I'd be inclined to go with a 0.02 cM grid, which
+would give
+`r add_commas(sum(sapply(liu_gmap_3Mbp, function(a) length(seq(a[2], a[length(a)], by=0.02)))))`
+positions, or a 0.01 cM grid, which would give
+`r add_commas(sum(sapply(liu_gmap_3Mbp, function(a) length(seq(a[2], a[length(a)], by=0.01)))))`
+positions.
+
+Let's go with a 0.02 cM grid for now.
+
+```{r form_the_grid}
+grid_gmap <- lapply(liu_gmap_3Mbp, function(a) seq(a[2], a[length(a)], by=0.02))
+```
+
+And next get interpolated physical positions, rounding to basepairs.
+
+```{r get_grid_bp}
+grid_pmap <- interp_map(grid_gmap, liu_gmap_3Mbp, liu_pmap_3Mbp)
+grid_pmap <- lapply(grid_pmap, round)
+```
+
+Now, we add names.
+
+```{r grid_add_names}
+for(i in seq_along(grid_pmap)) {
+    names(grid_pmap[[i]]) <- names(grid_gmap[[i]]) <-
+        paste(names(grid_pmap)[i], grid_pmap[[i]], sep="_")
+}
+```
+
+And we put them back together as a data frame.
+
+```{r grid_to_df}
+grid <- cbind(map_list_to_df(grid_pmap, pos_column="bp"),
+              cM=map_list_to_df(grid_gmap, pos_column="cM")[,"cM"])
+rownames(grid) <- grid$marker
+grid$pos <- grid$bp/1e6
+grid <- grid[,c("marker", "chr", "pos", "cM", "bp")]
+```
+
+The resulting `grid` object has `r add_commas(nrow(grid))` rows.
+The columns are slightly different than the `snps` object in the
+`DO378_islet_v2.RData` file, in that the `snps` object has a column
+called `bp` that is actually Mbp and a column `pos` that is basepairs.
+The new `grid` object has the same content, but the third column with
+Mbp positions is called `pos` and the final column with basepairs is
+called `bp`.
+
+One **potential issue** to keep in mind: the Liu et al. map has some
+long regions with very low recombination, and so this new 0.02 cM grid
+has some pretty big physical gaps, particularly on chromosome 14.
+Across the whole genome, there are
+`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 1e6)))`
+gaps > 1 Mbp, and
+`r sum(sapply(grid_pmap, function(a) sum(diff(a) > 2e6)))`
+gaps > 2 Mbp, and then chromosome 14 has two gaps > 5 Mbp.
+
+In contrast, KB Choi's original grid had no gaps > 2 Mbp and just 8
+gaps > 1 Mbp.
+
+### RNAseq gene positions on grid
+
+We won't download the islet RNA-seq data, because it's not yet
+officially public, but we grabbed the file `DO378_islet_v2.RData` from
+the Dan Gatti's directory on the JAX ftp site.
+
+```{r load_rnaseq, eval=FALSE}
+file <- file.path(in_dir, "DO378_islet_v2.RData")
+load(file)
+```
+
+```{r load_rnaseq_really, echo=FALSE}
+file <- file.path(in_dir, "DO378_islet_v2.RData")
+sub_file <- file.path(in_dir, "DO378_islet_v2_sub.RData")
+if(file.exists(sub_file)) {
+    load(sub_file)
+} else {
+    load(file)
+    save(snps, annot.mrna, file=sub_file)
+}
+```
+
+The object `snps` is the previous 64k grid with positions evenly spaced in cM.
+(Again note that the spacing is slightly different between chromosomes.)
+
+The object we want is `annot.mrna`. The `chr` column has 1-19, `X`, `Y`,
+and `MT`. There are columns `start`, `end`, and `middle_point`, all in
+basepairs, with `middle_point` being `round((start+end)/2)`.
+The column `nearest_snp` has integers in the range 1-64k,
+with missing values for the genes on the Y and MT; this is the index
+of the nearest point on the 64k SNP grid. We want to replace those
+values with the indices corresponding to our new grid.
 
 
-### RNAseq gene positions in cM
+Here's a function to do the job for a single position:
 
+```{r find_nearest_grid_pos}
+find_nearest <-
+    function(chr, pos, map, index)
+{
+    if(!(chr %in% names(map))) return(NA)
+    index[[chr]][ which.min( abs(pos - map[[chr]]) ) ]
+}
+```
 
+Now we pull out the grid positions as a list and calculate a
+corresponding list of grid indices.
+
+```{r grid_pmap_and_index}
+grid_pmap <- map_df_to_list(grid, pos_column="bp")
+grid_index <- map_df_to_list(cbind(grid, index=1:nrow(grid)), pos_column="index")
+```
+
+Finally, we calculate the new grid indices and plug them into the object.
+
+```{r calc_grid_indices}
+index <- rep(NA, nrow(annot.mrna))
+for(i in 1:nrow(annot.mrna)) {
+    index[i] <- find_nearest(annot.mrna$chr[i], annot.mrna$middle_point[i],
+                             grid_pmap, grid_index)
+}
+annot.mrna_newgrid <- annot.mrna
+annot.mrna_newgrid$nearest_snp <- index
+```
 
 ### Save stuff to files
 
@@ -386,6 +521,8 @@ than `.RData` files, as they each will contain one object.
 saveRDS(liu_map, file.path(out_dir, "liu_map.rds"))
 saveRDS(GM_snps, file.path(out_dir, "GM_snps_v2.rds"))
 saveRDS(MM_snps, file.path(out_dir, "MM_snps_v2.rds"))
+saveRDS(grid, file.path(out_dir, "grid_0.02cM.rds"))
+saveRDS(annot.mrna_newgrid, file.path(out_dir, "annot_mrna_0.02cM_grid.rds"))
 ```
 
 
