@@ -9,3 +9,9 @@ Analysis with the following purposes:
 - Calculate a grid of markers across the genome.
 
 - Get interpolated cM positions for the markers on the GigaMUGA array.
+
+---
+
+Analysis document: [`mouse_map_grid.html`](mouse_map_grid.html)
+
+Source R Markdown file: [`mouse_map_grid.Rmd`](mouse_map_grid.Rmd)
