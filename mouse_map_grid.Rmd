@@ -365,7 +365,7 @@ MM_gmap <- interp_map(MM_pmap, liu_pmap, liu_gmap)
 Finally, we paste the cM positions back into the `MM_snps` object.
 
 ```{r paste_in_MM_gmap}
-MM_snps$cM_rev[MM_keep] <- map_list_to_df(MM_gmap, pos_column="cM")[,"cM"]
+MM_snps$cM[MM_keep] <- map_list_to_df(MM_gmap, pos_column="cM")[,"cM"]
 ```
 
 

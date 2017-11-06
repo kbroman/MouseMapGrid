@@ -403,7 +403,7 @@ MM_pmap &lt;- lapply(MM_pmap, function(a) round(a*1e6))</code></pre>
 <p>And now let’s get interplated cM positions using the Liu et al. map.</p>
 <pre class="r"><code>MM_gmap &lt;- interp_map(MM_pmap, liu_pmap, liu_gmap)</code></pre>
 <p>Finally, we paste the cM positions back into the <code>MM_snps</code> object.</p>
-<pre class="r"><code>MM_snps$cM_rev[MM_keep] &lt;- map_list_to_df(MM_gmap, pos_column=&quot;cM&quot;)[,&quot;cM&quot;]</code></pre>
+<pre class="r"><code>MM_snps$cM[MM_keep] &lt;- map_list_to_df(MM_gmap, pos_column=&quot;cM&quot;)[,&quot;cM&quot;]</code></pre>
 </div>
 <div id="genome-grid-in-cm" class="section level3">
 <h3>Genome grid in cM</h3>
