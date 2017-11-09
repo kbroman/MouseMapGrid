@@ -10,7 +10,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(results="hide", warning=FALSE, message=FALSE)
-options(width=110)
+options(width=110, scipen=100)
 ```
 
 This analysis serves to do three things:
