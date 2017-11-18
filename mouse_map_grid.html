@@ -11,7 +11,7 @@
 
 <meta name="author" content="Karl Broman" />
 
-<meta name="date" content="2017-11-09" />
+<meta name="date" content="2017-11-18" />
 
 <title>Mouse map grid</title>
 
@@ -217,7 +217,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">Mouse map grid</h1>
 <h4 class="author"><em>Karl Broman</em></h4>
-<h4 class="date"><em>2017-11-09</em></h4>
+<h4 class="date"><em>2017-11-18</em></h4>
 
 </div>
 
@@ -229,7 +229,8 @@ div.tocify {
 <li><p>Get interpolated cM positions for the markers on the GigaMUGA array.</p></li>
 </ul>
 <p>I’ll use the <a href="https://github.com/rqtl/qtl2scan">R/qtl2scan</a> package to do interpolations, <a href="https://github.com/rqtl/qtl2convert">R/qtl2convert</a> to do some data manipulation, and <a href="https:github.com/kbroman/broman">R/broman</a> for a few minor things. I’ll also use a few other packages below (<a href="https://github.com/hadley/rvest">rvest</a>, <a href="http://bioconductor.org/packages/release/bioc/html/AnnotationHub.html">AnnotationHub</a>, and <a href="https://github.com/hadley/devtools">devtools</a>).</p>
-<pre class="r"><code>library(qtl2scan)
+<pre class="r"><code>library(qtl2geno)
+library(qtl2scan)
 library(qtl2convert)
 library(broman)</code></pre>
 <div id="download-and-prepare-the-maps" class="section level3">
@@ -464,6 +465,24 @@ annot.mrna_newgrid$nearest_snp &lt;- index</code></pre>
 <p>With the original grid, of the 21,771 genes on the autosomes or X chromosome, 0 are more than 1 Mbp away from a grid position, and just 8 are more than 500 kbp away from a grid position.</p>
 <p>With the new grid, 36 are more than 1 Mbp away from a grid position, and 129 are more than 500 kbp away from a grid position. There are 7 genes more than 2 Mbp from a grid position, all on chr 14. The maximum distance is 2.8 Mbp.</p>
 </div>
+<div id="add-more-pseudomarkers" class="section level3">
+<h3>Add more pseudomarkers</h3>
+<p>To deal with the physical gaps between grid points, I’m inclined to add additional pseudomarkers so that no two points are more than 0.5 Mbp apart.</p>
+<pre class="r"><code>grid_pmap &lt;- lapply(grid_pmap, function(a) a/1e6) # pmap in Mbp rather than bp
+
+grid_pmap_plus &lt;- insert_pseudomarkers(grid_pmap, step=0.5, stepwidth=&quot;max&quot;)
+for(i in seq_along(grid_pmap_plus)) {
+    names(grid_pmap_plus[[i]]) &lt;- paste(names(grid_pmap)[i], round(grid_pmap_plus[[i]]*1e6), sep=&quot;_&quot;)
+}
+grid_gmap_plus &lt;- interp_map(grid_pmap_plus, grid_pmap, grid_gmap)
+
+grid_plus &lt;- cbind(map_list_to_df(grid_pmap_plus, pos_column=&quot;pos&quot;),
+              cM=map_list_to_df(grid_gmap_plus, pos_column=&quot;cM&quot;)[,&quot;cM&quot;])
+rownames(grid_plus) &lt;- grid_plus$marker
+grid_plus$bp &lt;- round(grid_plus$pos*1e6)
+grid_plus &lt;- grid_plus[,c(&quot;marker&quot;, &quot;chr&quot;, &quot;pos&quot;, &quot;cM&quot;, &quot;bp&quot;)]</code></pre>
+<p>This increases the number of grid points from 68433 to 69005 (that is, an additional 572 points).</p>
+</div>
 <div id="save-stuff-to-files" class="section level3">
 <h3>Save stuff to files</h3>
 <p>Now let’s save everything to files. I’m going to use <code>.rds</code> files rather than <code>.RData</code> files, as they each will contain one object.</p>
@@ -471,6 +490,7 @@ annot.mrna_newgrid$nearest_snp &lt;- index</code></pre>
 saveRDS(GM_snps, file.path(out_dir, &quot;GM_snps_v2.rds&quot;))
 saveRDS(MM_snps, file.path(out_dir, &quot;MM_snps_v2.rds&quot;))
 saveRDS(grid, file.path(out_dir, &quot;grid_0.02cM.rds&quot;))
+saveRDS(grid_plus, file.path(out_dir, &quot;grid_0.02cM_plus.rds&quot;))
 saveRDS(annot.mrna_newgrid, file.path(out_dir, &quot;annot_mrna_0.02cM_grid.rds&quot;))</code></pre>
 </div>
 <div id="session-info" class="section level3">
@@ -483,7 +503,7 @@ saveRDS(annot.mrna_newgrid, file.path(out_dir, &quot;annot_mrna_0.02cM_grid.rds&
 ##  language en_US.UTF-8                 
 ##  collate  en_US.UTF-8                 
 ##  tz       America/Chicago             
-##  date     2017-11-09                  
+##  date     2017-11-18                  
 ## 
 ##  package     * version  date       source        
 ##  assertthat    0.2.0    2017-04-11 CRAN (R 3.4.0)
@@ -491,6 +511,7 @@ saveRDS(annot.mrna_newgrid, file.path(out_dir, &quot;annot_mrna_0.02cM_grid.rds&
 ##  base        * 3.4.2    2017-10-04 local         
 ##  broman      * 0.66-2   2017-10-24 local         
 ##  compiler      3.4.2    2017-10-04 local         
+##  data.table    1.10.4-3 2017-10-27 CRAN (R 3.4.2)
 ##  datasets    * 3.4.2    2017-10-04 local         
 ##  devtools      1.13.3   2017-08-02 CRAN (R 3.4.1)
 ##  digest        0.6.12   2017-01-27 CRAN (R 3.4.0)
@@ -505,8 +526,9 @@ saveRDS(annot.mrna_newgrid, file.path(out_dir, &quot;annot_mrna_0.02cM_grid.rds&
 ##  methods     * 3.4.2    2017-10-04 local         
 ##  parallel      3.4.2    2017-10-04 local         
 ##  qtl           1.42-2   2017-09-13 local         
-##  qtl2convert * 0.5-9    2017-10-18 local         
-##  qtl2scan    * 0.5-24   2017-11-07 local         
+##  qtl2convert * 0.5-10   2017-11-18 local         
+##  qtl2geno    * 0.5-37   2017-11-18 local         
+##  qtl2scan    * 0.5-25   2017-11-18 local         
 ##  R6            2.2.2    2017-06-17 CRAN (R 3.4.0)
 ##  Rcpp          0.12.13  2017-09-28 CRAN (R 3.4.2)
 ##  rmarkdown     1.6      2017-06-15 CRAN (R 3.4.0)

@@ -35,6 +35,7 @@ and [devtools](https://github.com/hadley/devtools)).
 
 
 ```{r load_libraries}
+library(qtl2geno)
 library(qtl2scan)
 library(qtl2convert)
 library(broman)
@@ -548,6 +549,33 @@ The maximum distance is
 `r round(max(abs(annot.mrna$middle_point - new_gridpos) , na.rm=TRUE)/1e6, 1)`
 Mbp.
 
+
+### Add more pseudomarkers
+
+To deal with the physical gaps between grid points, I'm inclined to
+add additional pseudomarkers so that no two points are more than 0.5
+Mbp apart.
+
+```{r add_more_pseudomarkers}
+grid_pmap <- lapply(grid_pmap, function(a) a/1e6) # pmap in Mbp rather than bp
+
+grid_pmap_plus <- insert_pseudomarkers(grid_pmap, step=0.5, stepwidth="max")
+for(i in seq_along(grid_pmap_plus)) {
+    names(grid_pmap_plus[[i]]) <- paste(names(grid_pmap)[i], round(grid_pmap_plus[[i]]*1e6), sep="_")
+}
+grid_gmap_plus <- interp_map(grid_pmap_plus, grid_pmap, grid_gmap)
+
+grid_plus <- cbind(map_list_to_df(grid_pmap_plus, pos_column="pos"),
+              cM=map_list_to_df(grid_gmap_plus, pos_column="cM")[,"cM"])
+rownames(grid_plus) <- grid_plus$marker
+grid_plus$bp <- round(grid_plus$pos*1e6)
+grid_plus <- grid_plus[,c("marker", "chr", "pos", "cM", "bp")]
+```
+
+This increases the number of grid points from `r nrow(grid)` to `r nrow(grid_plus)`
+(that is, an additional `r nrow(grid_plus)-nrow(grid)` points).
+
+
 ### Save stuff to files
 
 Now let's save everything to files. I'm going to use `.rds` files rather
@@ -558,6 +586,7 @@ saveRDS(liu_map, file.path(out_dir, "liu_map.rds"))
 saveRDS(GM_snps, file.path(out_dir, "GM_snps_v2.rds"))
 saveRDS(MM_snps, file.path(out_dir, "MM_snps_v2.rds"))
 saveRDS(grid, file.path(out_dir, "grid_0.02cM.rds"))
+saveRDS(grid_plus, file.path(out_dir, "grid_0.02cM_plus.rds"))
 saveRDS(annot.mrna_newgrid, file.path(out_dir, "annot_mrna_0.02cM_grid.rds"))
 ```
 
