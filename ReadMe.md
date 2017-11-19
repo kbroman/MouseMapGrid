@@ -26,6 +26,10 @@ Results:
 - [`grid_0.02cM.rds`](results/grid_0.02cM.rds) - New 0.02 cM grid
   across mouse genome.
 
+- [`grid_0.02cM_plus.rds`](results/grid_0.02cM_plus.rds) - New 0.02 cM grid
+  across mouse genome, with additional pseudomarkers added so that
+  there are no gaps > 0.5 Mbp.
+
 - [`GM_snps_v2.rds`](results/GM_snps_v2.rds) - GigaMUGA snps with cM
   positions taken from the Liu et al. map.
 
